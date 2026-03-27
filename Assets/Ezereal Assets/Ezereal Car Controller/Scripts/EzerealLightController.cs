@@ -7,6 +7,10 @@ namespace Ezereal
     public class EzerealLightController : MonoBehaviour // This system uses Input System and has no references. Some methods here are called from other scripts.
     {
         [Header("Beam Lights")]
+        [Header("Sound")]
+
+        [SerializeField] AudioSource indicatorAudioSource;
+        [SerializeField] AudioClip indicatorSound;
 
         [SerializeField] LightBeam currentBeam = LightBeam.off;
 
@@ -134,15 +138,22 @@ namespace Ezereal
         }
 
         IEnumerator TurnSignalController(GameObject[] turnLights, bool isActive)
-        {
-            while (isActive)
             {
-                SetLight(turnLights, true);
-                yield return new WaitForSeconds(lightBlinkDelay);
-                SetLight(turnLights, false);
-                yield return new WaitForSeconds(lightBlinkDelay);
+                while (isActive)
+                {
+                    SetLight(turnLights, true);
+
+                    if (indicatorAudioSource && indicatorSound)
+                    {
+                        indicatorAudioSource.PlayOneShot(indicatorSound);
+                    }
+
+                    yield return new WaitForSeconds(lightBlinkDelay);
+
+                    SetLight(turnLights, false);
+                    yield return new WaitForSeconds(lightBlinkDelay);
+                }
             }
-        }
 
         IEnumerator HazardLightsController()
         {

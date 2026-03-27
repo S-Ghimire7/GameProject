@@ -1,524 +1,277 @@
 using UnityEngine;
-using UnityEngine.InputSystem;
 using TMPro;
-using UnityEngine.UI;
+using UnityEngine.InputSystem;
 
 namespace Ezereal
 {
-    public class EzerealCarController : MonoBehaviour // This is the main system resposible for car control.
+    public enum ManualGears
     {
-        [Header("Ezereal References")]
+        Reverse = 0,
+        Neutral = 1,
+        Gear1 = 2,
+        Gear2 = 3,
+        Gear3 = 4,
+        Gear4 = 5,
+        Gear5 = 6
+    }
 
-        [SerializeField] EzerealLightController ezerealLightController;
-        [SerializeField] EzerealSoundController ezerealSoundController;
-        [SerializeField] EzerealWheelFrictionController ezerealWheelFrictionController;
-
-        [Header("References")]
-
+    public class EzerealCarController : MonoBehaviour
+    {
         public Rigidbody vehicleRB;
+
+        [Header("Wheels")]
         public WheelCollider frontLeftWheelCollider;
         public WheelCollider frontRightWheelCollider;
         public WheelCollider rearLeftWheelCollider;
         public WheelCollider rearRightWheelCollider;
-        WheelCollider[] wheels;
 
-        [SerializeField] Transform frontLeftWheelMesh;
-        [SerializeField] Transform frontRightWheelMesh;
-        [SerializeField] Transform rearLeftWheelMesh;
-        [SerializeField] Transform rearRightWheelMesh;
+        [Header("UI")]
+        public TMP_Text currentGearTMP_UI;
+        public TMP_Text currentSpeedTMP_UI;
 
-        [SerializeField] Transform steeringWheel;
+        [Header("Ignition")]
+        public AudioSource ignitionAudio;
+        public AudioSource engineAudio;
 
-        [SerializeField] TMP_Text currentGearTMP_UI;
-        [SerializeField] TMP_Text currentGearTMP_Dashboard;
+        [Header("Controls")]
+        public KeyCode ignitionKey = KeyCode.I;
+        public KeyCode gearUpKey = KeyCode.LeftShift;
+        public KeyCode gearDownKey = KeyCode.LeftControl;
+        public KeyCode handbrakeKey = KeyCode.Space;
 
-        [SerializeField] TMP_Text currentSpeedTMP_UI;
-        [SerializeField] TMP_Text currentSpeedTMP_Dashboard;
-        [SerializeField] Slider accelerationSlider;
+        [Header("Car Settings")]
+        public float horsePower = 400f;
+        public float brakePower = 4000f;
+        public float maxSteeringAngle = 28f;
 
-        [Header("Settings")]
-        public bool isStarted = true;
+        [Header("Top Speed")]
+        public float maxCarSpeed = 100f;
 
-        public float maxForwardSpeed = 100f; // 100f default
-        public float maxReverseSpeed = 30f; // 30f default
-        public float horsePower = 1000f; // 100f0 default
-        public float brakePower = 2000f; // 2000f default
-        public float handbrakeForce = 3000f; // 3000f default
-        public float maxSteerAngle = 30f; // 30f default
-        public float steeringSpeed = 5f; // 0.5f default
-        public float stopThreshold = 1f; // 1f default. At what speed car will make a full stop
-        public float decelerationSpeed = 0.5f; // 0.5f default
-        public float maxSteeringWheelRotation = 360f; // 360 for real steering wheel. 120 would be more suitable for racing.
+        [Header("Gear Ratios")]
+        public float[] gearRatios = { -3.0f, 0f, 3.5f, 2.5f, 1.8f, 1.2f, 1.0f };
 
-        [Header("Drive Type")]
-        public DriveTypes driveType = DriveTypes.RWD;
-
-        [Header("Gearbox")]
-        public AutomaticGears currentGear = AutomaticGears.Drive;
-
-        [Header("Debug Info")]
-        public bool stationary = true;
-        [SerializeField] float currentSpeed = 0f;
-        [SerializeField] float currentAccelerationValue = 0f;
-        [SerializeField] float currentBrakeValue = 0f;
-        [SerializeField] float currentHandbrakeValue = 0f;
-        [SerializeField] float currentSteerAngle = 0f;
-        [SerializeField] float targetSteerAngle = 0f;
-        [SerializeField] float FrontLeftWheelRPM = 0f;
-        [SerializeField] float FrontRightWheelRPM = 0f;
-        [SerializeField] float RearLeftWheelRPM = 0f;
-        [SerializeField] float RearRightWheelRPM = 0f;
-
-        [SerializeField] float speedFactor = 0f; // Leave at zero. Responsible for smooth acceleration and near-top-speed slowdown.
-
-        private void Awake()
+        [Header("Gear Speed Limits (KM/H)")]
+        public float[] gearSpeedLimits =
         {
-            wheels = new WheelCollider[]
-            {
-            frontLeftWheelCollider,
-            frontRightWheelCollider,
-            rearLeftWheelCollider,
-            rearRightWheelCollider,
-            };
+            40f,  // Reverse
+            0f,   // Neutral
+            20f,  // Gear 1  🔥 FIXED
+            40f,  // Gear 2
+            60f,  // Gear 3
+            80f,  // Gear 4
+            100f  // Gear 5
+        };
 
-            if (ezerealLightController == null)
-            {
-                Debug.LogWarning("EzerealLightController reference is missing. Ignore or attach one if you want to have light controls.");
-            }
+        public float finalDrive = 2.8f;
 
-            if (ezerealSoundController == null)
-            {
-                Debug.LogWarning("EzerealSoundController reference is missing. Ignore or attach one if you want to have engine sounds.");
-            }
+        [Header("Engine")]
+        public float maxRPM = 5500f;
 
-            if (ezerealWheelFrictionController == null)
-            {
-                Debug.LogWarning("EzerealWheelFrictionController reference is missing. Ignore or attach one if you want to have friction controls.");
-            }
+        [Header("Grip")]
+        public float traction = 1.5f;
 
+        [Header("State")]
+        public ManualGears currentGear = ManualGears.Neutral;
+        public bool isStarted = false;
+
+        public bool stationary;
+        public bool InAir;
+
+        float throttleInput;
+        float brakeInput;
+        float steerInput;
+
+        float smoothThrottle;
+        float rpm;
+
+        bool handbrakeActive;
+
+        void Awake()
+        {
             if (vehicleRB == null)
+                vehicleRB = GetComponent<Rigidbody>();
+        }
+
+        void Update()
+        {
+            HandleIgnition();
+            HandleGears();
+            HandleHandbrake();
+
+            UpdateState();
+            UpdateUI();
+            UpdateEngineSound();
+        }
+
+        void FixedUpdate()
+        {
+            if (!isStarted)
             {
-                Debug.LogError("VehicleRB reference is missing for EzerealCarController!");
+                StopCar();
+                return;
             }
 
-            if (isStarted)
+            ApplySteering();
+            ApplyAcceleration();
+            ApplyBraking();
+        }
+
+        void HandleIgnition()
+        {
+            if (Input.GetKeyDown(ignitionKey))
             {
-                Debug.Log("Car is started.");
+                isStarted = !isStarted;
 
-                if (ezerealLightController != null)
-                {
-                    ezerealLightController.MiscLightsOn();
-                }
+                if (ignitionAudio != null)
+                    ignitionAudio.Play();
 
-                if (ezerealSoundController != null)
-                {
-                    ezerealSoundController.TurnOnEngineSound();
-                }
+                if (!isStarted && engineAudio != null)
+                    engineAudio.Stop();
             }
         }
 
-        void OnStartCar()
+        void HandleGears()
         {
-            isStarted = !isStarted;
+            if (Input.GetKeyDown(gearUpKey) && (int)currentGear < 6)
+                currentGear++;
 
-            if (isStarted)
-            {
-                Debug.Log("Car started.");
-
-                if (ezerealLightController != null)
-                {
-                    ezerealLightController.MiscLightsOn();
-                }
-
-                if (ezerealSoundController != null)
-                {
-                    ezerealSoundController.TurnOnEngineSound();
-                }
-
-            }
-            else if (!isStarted)
-            {
-                Debug.Log("Car turned off");
-
-                if (ezerealLightController != null)
-                {
-                    ezerealLightController.AllLightsOff();
-                }
-
-                if (ezerealSoundController != null)
-                {
-                    ezerealSoundController.TurnOffEngineSound();
-                }
-
-                frontLeftWheelCollider.motorTorque = 0;
-                frontRightWheelCollider.motorTorque = 0;
-                rearLeftWheelCollider.motorTorque = 0;
-                rearRightWheelCollider.motorTorque = 0;
-            }
-
-
+            if (Input.GetKeyDown(gearDownKey) && (int)currentGear > 0)
+                currentGear--;
         }
 
-        void OnAccelerate(InputValue accelerationValue)
+        void HandleHandbrake()
         {
-            currentAccelerationValue = accelerationValue.Get<float>();
-            //Debug.Log("Acceleration: " + currentAccelerationValue.ToString());
+            handbrakeActive = Input.GetKey(handbrakeKey);
         }
 
-        void Acceleration()
+        void ApplyAcceleration()
         {
-            if (isStarted)
-            {
-                if (currentGear == AutomaticGears.Drive)
-                {
-                    // Calculate how close the car is to top speed
-                    // as a number from zero to one
-                    speedFactor = Mathf.InverseLerp(0, maxForwardSpeed, currentSpeed);
-
-                    // Use that to calculate how much torque is available 
-                    // (zero torque at top speed)
-                    float currentMotorTorque = Mathf.Lerp(horsePower, 0, speedFactor);
-
-                    if (currentAccelerationValue > 0f && currentSpeed < maxForwardSpeed)
-                    {
-                        if (driveType == DriveTypes.RWD)
-                        {
-                            rearLeftWheelCollider.motorTorque = currentMotorTorque * currentAccelerationValue;
-                            rearRightWheelCollider.motorTorque = currentMotorTorque * currentAccelerationValue;
-                        }
-                        else if (driveType == DriveTypes.FWD)
-                        {
-                            frontLeftWheelCollider.motorTorque = currentMotorTorque * currentAccelerationValue;
-                            frontRightWheelCollider.motorTorque = currentMotorTorque * currentAccelerationValue;
-                        }
-                        else if (driveType == DriveTypes.AWD)
-                        {
-                            frontLeftWheelCollider.motorTorque = currentMotorTorque * currentAccelerationValue;
-                            frontRightWheelCollider.motorTorque = currentMotorTorque * currentAccelerationValue;
-                            rearLeftWheelCollider.motorTorque = currentMotorTorque * currentAccelerationValue;
-                            rearRightWheelCollider.motorTorque = currentMotorTorque * currentAccelerationValue;
-                        }
-                    }
-                    else
-                    {
-                        frontLeftWheelCollider.motorTorque = 0;
-                        frontRightWheelCollider.motorTorque = 0;
-                        rearLeftWheelCollider.motorTorque = 0;
-                        rearRightWheelCollider.motorTorque = 0;
-                    }
-                }
-
-                if (currentGear == AutomaticGears.Reverse)
-                {
-                    if (currentAccelerationValue > 0f && currentSpeed > -maxReverseSpeed)
-                    {
-                        currentAccelerationValue = 1; //Invert Acceleration value
-
-                        if (driveType == DriveTypes.RWD)
-                        {
-                            rearLeftWheelCollider.motorTorque = -currentAccelerationValue * horsePower;
-                            rearRightWheelCollider.motorTorque = -currentAccelerationValue * horsePower;
-                        }
-                        else if (driveType == DriveTypes.FWD)
-                        {
-                            frontLeftWheelCollider.motorTorque = -currentAccelerationValue * horsePower;
-                            frontRightWheelCollider.motorTorque = -currentAccelerationValue * horsePower;
-                        }
-                        else if (driveType == DriveTypes.AWD)
-                        {
-                            frontLeftWheelCollider.motorTorque = -currentAccelerationValue * horsePower;
-                            frontRightWheelCollider.motorTorque = -currentAccelerationValue * horsePower;
-                            rearLeftWheelCollider.motorTorque = -currentAccelerationValue * horsePower;
-                            rearRightWheelCollider.motorTorque = -currentAccelerationValue * horsePower;
-                        }
-
-                    }
-                    else
-                    {
-                        frontLeftWheelCollider.motorTorque = 0;
-                        frontRightWheelCollider.motorTorque = 0;
-                        rearLeftWheelCollider.motorTorque = 0;
-                        rearRightWheelCollider.motorTorque = 0;
-                    }
-                }
-
-                UpdateAccelerationSlider();
-            }
-        }
-
-        void OnBrake(InputValue brakeValue)
-        {
-            currentBrakeValue = brakeValue.Get<float>();
-            //Debug.Log("Brake:" + currentBrakeValue.ToString());
-
-            if (isStarted && ezerealLightController != null)
-            {
-                if (currentBrakeValue > 0)
-                {
-                    ezerealLightController.BrakeLightsOn();
-                }
-                else
-                {
-                    ezerealLightController.BrakeLightsOff();
-                }
-            }
-        }
-
-        void Braking()
-        {
-            if (currentBrakeValue > 0f)
-            {
-                frontLeftWheelCollider.brakeTorque = currentBrakeValue * brakePower;
-                frontRightWheelCollider.brakeTorque = currentBrakeValue * brakePower;
-            }
-            else
-            {
-                frontLeftWheelCollider.brakeTorque = 0;
-                frontRightWheelCollider.brakeTorque = 0;
-            }
-        }
-
-        void OnHandbrake(InputValue handbrakeValue)
-        {
-            currentHandbrakeValue = handbrakeValue.Get<float>();
-
-            if (isStarted)
-            {
-                if (currentHandbrakeValue > 0)
-                {
-                    if (ezerealWheelFrictionController != null)
-                    {
-                        ezerealWheelFrictionController.StartDrifting(currentHandbrakeValue);
-                    }
-
-                    if (ezerealLightController != null)
-                    {
-                        ezerealLightController.HandbrakeLightOn();
-                    }
-                }
-                else
-                {
-                    if (ezerealWheelFrictionController != null)
-                    {
-                        ezerealWheelFrictionController.StopDrifting();
-                    }
-
-                    if (ezerealLightController != null)
-                    {
-                        ezerealLightController.HandbrakeLightOff();
-                    }
-                }
-            }
-        }
-
-        void Handbraking()
-        {
-            if (currentHandbrakeValue > 0f)
+            if (!isStarted || handbrakeActive)
             {
                 rearLeftWheelCollider.motorTorque = 0;
                 rearRightWheelCollider.motorTorque = 0;
-                rearLeftWheelCollider.brakeTorque = currentHandbrakeValue * handbrakeForce;
-                rearRightWheelCollider.brakeTorque = currentHandbrakeValue * handbrakeForce;
-
-
+                return;
             }
-            else
+
+            float speedKmh = vehicleRB.linearVelocity.magnitude * 3.6f;
+
+            float gearRatio = gearRatios[(int)currentGear];
+
+            // ❌ Neutral
+            if (gearRatio == 0f)
+                return;
+
+            float maxSpeed = gearSpeedLimits[(int)currentGear];
+
+            // 🔥 HARD GEAR LIMIT (FIXES GEAR 1 ISSUE)
+            if (maxSpeed > 0f && speedKmh >= maxSpeed)
             {
-                rearLeftWheelCollider.brakeTorque = 0;
-                rearRightWheelCollider.brakeTorque = 0;
+                rearLeftWheelCollider.motorTorque = 0;
+                rearRightWheelCollider.motorTorque = 0;
+
+                vehicleRB.linearVelocity *= 0.98f; // slight drag
+
+                return;
             }
-        }
 
-        void OnSteer(InputValue turnValue)
-        {
-            targetSteerAngle = turnValue.Get<float>() * maxSteerAngle;
-        }
-
-        void Steering()
-        {
-            float adjustedspeedFactor = Mathf.InverseLerp(20, maxForwardSpeed, currentSpeed); //minimum speed affecting steerAngle is 20
-            float adjustedTurnAngle = targetSteerAngle * (1 - adjustedspeedFactor); //based on current speed.
-            currentSteerAngle = Mathf.Lerp(currentSteerAngle, adjustedTurnAngle, Time.deltaTime * steeringSpeed);
-
-            frontLeftWheelCollider.steerAngle = currentSteerAngle;
-            frontRightWheelCollider.steerAngle = currentSteerAngle;
-
-            UpdateWheel(frontLeftWheelCollider, frontLeftWheelMesh);
-            UpdateWheel(frontRightWheelCollider, frontRightWheelMesh);
-            UpdateWheel(rearLeftWheelCollider, rearLeftWheelMesh);
-            UpdateWheel(rearRightWheelCollider, rearRightWheelMesh);
-        }
-
-        void Slowdown()
-        {
-            if (vehicleRB != null)
+            // 🔥 GLOBAL SPEED LIMIT
+            if (speedKmh >= maxCarSpeed)
             {
-                if (currentAccelerationValue == 0 && currentBrakeValue == 0 && currentHandbrakeValue == 0)
-                {
-#if UNITY_6000_0_OR_NEWER
-                    vehicleRB.linearVelocity = Vector3.Lerp(vehicleRB.linearVelocity, Vector3.zero, Time.deltaTime * decelerationSpeed);
-#else
-                    vehicleRB.velocity = Vector3.Lerp(vehicleRB.velocity, Vector3.zero, Time.deltaTime * decelerationSpeed);
-#endif
-                }
+                rearLeftWheelCollider.motorTorque = 0;
+                rearRightWheelCollider.motorTorque = 0;
+                return;
             }
+
+            // RPM calculation
+            rpm = Mathf.Clamp(speedKmh * Mathf.Abs(gearRatio) * 80f, 0f, maxRPM);
+
+            float throttle = Mathf.Clamp01(throttleInput);
+            smoothThrottle = Mathf.Lerp(smoothThrottle, throttle, Time.deltaTime * 2f);
+
+            float torque = horsePower * smoothThrottle * gearRatio * finalDrive;
+
+            torque *= traction;
+
+            rearLeftWheelCollider.motorTorque = torque;
+            rearRightWheelCollider.motorTorque = torque;
         }
 
-        void OnDownShift()
+        void ApplyBraking()
         {
-            switch (currentGear)
+            float brake = brakePower * brakeInput;
+
+            frontLeftWheelCollider.brakeTorque = brake;
+            frontRightWheelCollider.brakeTorque = brake;
+
+            rearLeftWheelCollider.brakeTorque = brake;
+            rearRightWheelCollider.brakeTorque = brake;
+
+            if (handbrakeActive)
             {
-                case AutomaticGears.Reverse:
-                    //Debug.Log("Reverse, can't go any lower");
-                    break;
-
-                case AutomaticGears.Neutral:
-                    currentGear--;
-                    UpdateGearText("R");
-                    if (isStarted && ezerealLightController != null)
-                    {
-                        ezerealLightController.ReverseLightsOn();
-                    }
-                    break;
-
-                case AutomaticGears.Drive:
-                    currentGear--;
-                    UpdateGearText("N");
-                    break;
+                rearLeftWheelCollider.brakeTorque = brakePower * 2f;
+                rearRightWheelCollider.brakeTorque = brakePower * 2f;
             }
         }
 
-        void OnUpShift()
+        void ApplySteering()
         {
-            switch (currentGear)
-            {
-                case AutomaticGears.Reverse:
-                    currentGear++;
-                    UpdateGearText("N");
+            float steer = maxSteeringAngle * steerInput;
 
-                    if (isStarted && ezerealLightController != null)
-                    {
-                        ezerealLightController.ReverseLightsOff();
-                    }
-
-                    break;
-                case AutomaticGears.Neutral:
-                    currentGear++;
-                    UpdateGearText("D");
-                    break;
-                case AutomaticGears.Drive:
-                    //Debug.Log("Drive, can't go any higher");
-                    break;
-            }
+            frontLeftWheelCollider.steerAngle = steer;
+            frontRightWheelCollider.steerAngle = steer;
         }
 
-
-
-        private void FixedUpdate()
+        void StopCar()
         {
-            Acceleration();
-
-            Braking();
-
-            Handbraking();
-
-            Steering();
-
-            Slowdown();
-
-            RotateSteeringWheel();
-
-            if
-                (
-                    Mathf.Abs(frontLeftWheelCollider.rpm) < stopThreshold &&
-                    Mathf.Abs(frontRightWheelCollider.rpm) < stopThreshold &&
-                    Mathf.Abs(rearLeftWheelCollider.rpm) < stopThreshold &&
-                    Mathf.Abs(rearRightWheelCollider.rpm) < stopThreshold
-                )
-            {
-                stationary = true;
-            }
-            else
-            {
-                stationary = false;
-            }
-
-            if (vehicleRB != null) // Unity uses m/s as for default. So I convert from m/s to km/h. For mph use 2.23694f instead of 3.6f.
-            {
-#if UNITY_6000_0_OR_NEWER
-                currentSpeed = Vector3.Dot(vehicleRB.gameObject.transform.forward, vehicleRB.linearVelocity);
-                currentSpeed *= 3.6f;
-                UpdateSpeedText(currentSpeed);
-#else
-                currentSpeed = Vector3.Dot(vehicleRB.gameObject.transform.forward, vehicleRB.velocity);
-                currentSpeed *= 3.6f; 
-                UpdateSpeedText(currentSpeed);
-#endif
-
-            }
-
-
-            FrontLeftWheelRPM = frontLeftWheelCollider.rpm;
-            FrontRightWheelRPM = frontRightWheelCollider.rpm;
-            RearLeftWheelRPM = rearLeftWheelCollider.rpm;
-            RearRightWheelRPM = rearRightWheelCollider.rpm;
+            rearLeftWheelCollider.motorTorque = 0;
+            rearRightWheelCollider.motorTorque = 0;
         }
 
-        private void UpdateWheel(WheelCollider col, Transform mesh)
+        void UpdateEngineSound()
         {
-            col.GetWorldPose(out Vector3 position, out Quaternion rotation);
-            mesh.SetPositionAndRotation(position, rotation);
+            if (!isStarted || engineAudio == null) return;
+
+            engineAudio.volume = 1f;
+
+            float speed = vehicleRB.linearVelocity.magnitude * 3.6f;
+            float pitch = Mathf.Lerp(0.8f, 1.3f, speed / maxCarSpeed);
+
+            engineAudio.pitch = Mathf.Lerp(engineAudio.pitch, pitch, Time.deltaTime * 2f);
         }
 
-
-        void RotateSteeringWheel()
+        void UpdateUI()
         {
-            float currentXAngle = steeringWheel.transform.localEulerAngles.x; // Maximum steer angle in degrees
+            float speed = vehicleRB.linearVelocity.magnitude * 3.6f;
 
-            // Calculate the rotation based on the steer angle
-            float normalizedSteerAngle = Mathf.Clamp(frontLeftWheelCollider.steerAngle, -maxSteerAngle, maxSteerAngle);
-            float rotation = Mathf.Lerp(maxSteeringWheelRotation, -maxSteeringWheelRotation, (normalizedSteerAngle + maxSteerAngle) / (2 * maxSteerAngle));
+            if (currentSpeedTMP_UI != null)
+                currentSpeedTMP_UI.text = speed.ToString("F0");
 
-            // Set the local rotation of the steering wheel
-            steeringWheel.localRotation = Quaternion.Euler(currentXAngle, 0, rotation);
+            if (currentGearTMP_UI != null)
+                currentGearTMP_UI.text = currentGear.ToString();
         }
 
-        void UpdateGearText(string gear)
+        // ✅ FIXED STATE SYSTEM
+        void UpdateState()
         {
-            currentGearTMP_UI.text = gear;
-            currentGearTMP_Dashboard.text = gear;
+            float speed = vehicleRB.linearVelocity.magnitude;
+
+            stationary = speed < 0.2f &&
+                         Mathf.Abs(throttleInput) < 0.05f &&
+                         Mathf.Abs(brakeInput) < 0.05f;
+
+            bool wheelsGrounded =
+                frontLeftWheelCollider.isGrounded ||
+                frontRightWheelCollider.isGrounded ||
+                rearLeftWheelCollider.isGrounded ||
+                rearRightWheelCollider.isGrounded;
+
+            bool groundCheck = Physics.Raycast(transform.position, Vector3.down, 1.5f);
+
+            InAir = !wheelsGrounded && !groundCheck;
         }
 
-        void UpdateSpeedText(float speed)
-        {
-            speed = Mathf.Abs(speed);
-
-            currentSpeedTMP_UI.text = speed.ToString("F0");
-            currentSpeedTMP_Dashboard.text = speed.ToString("F0");
-        }
-
-        void UpdateAccelerationSlider()
-        {
-            if (currentGear == AutomaticGears.Drive || currentGear == AutomaticGears.Reverse)
-            {
-                accelerationSlider.value = Mathf.Lerp(accelerationSlider.value, currentAccelerationValue, Time.deltaTime * 15f);
-            }
-            else
-            {
-                accelerationSlider.value = 0;
-            }
-        }
-
-        public bool InAir()
-        {
-            foreach (WheelCollider wheel in wheels)
-            {
-                if (wheel.GetGroundHit(out _))
-                {
-                    return false;
-                }
-            }
-            return true;
-        }
+        void OnAccelerate(InputValue value) => throttleInput = value.Get<float>();
+        void OnBrake(InputValue value) => brakeInput = value.Get<float>();
+        void OnSteer(InputValue value) => steerInput = value.Get<float>();
     }
 }

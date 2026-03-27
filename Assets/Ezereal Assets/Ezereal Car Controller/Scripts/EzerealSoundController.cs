@@ -2,134 +2,119 @@ using UnityEngine;
 
 namespace Ezereal
 {
-    public class EzerealSoundController : MonoBehaviour // This system plays tire and engine sounds.
+    public class EzerealSoundController : MonoBehaviour
     {
         [Header("References")]
-        [SerializeField] bool useSounds = false;
+        [SerializeField] bool useSounds = true;
         [SerializeField] EzerealCarController ezerealCarController;
         [SerializeField] AudioSource tireAudio;
         [SerializeField] AudioSource engineAudio;
 
         [Header("Settings")]
-        public float maxVolume = 0.5f; // Maximum volume for high speeds
+        public float maxVolume = 0.5f;
 
         [Header("Debug")]
         [SerializeField] bool alreadyPlaying;
 
         void Start()
         {
-            if (useSounds)
+            if (!useSounds) return;
+
+            if (tireAudio != null)
             {
-                alreadyPlaying = false;
-
-                if (ezerealCarController == null || ezerealCarController.vehicleRB == null || tireAudio == null || engineAudio == null)
-                {
-                    Debug.LogWarning("ezerealSoundController is missing some references. Ignore or attach them if you want to have sound controls.");
-
-
-                }
-
-                if (tireAudio != null)
-                {
-                    tireAudio.volume = 0f; // Start with zero volume
-                    tireAudio.Stop();
-                }
+                tireAudio.volume = 0f;
+                tireAudio.loop = true;
+                tireAudio.Stop();
             }
-        }
 
-        public void TurnOnEngineSound()
-        {
-            if (useSounds)
+            if (engineAudio != null)
             {
-                if (engineAudio != null)
-                {
-                    engineAudio.Play();
-                }
-            }
-        }
-
-        public void TurnOffEngineSound()
-        {
-            if (useSounds)
-            {
-                if (engineAudio != null)
-                {
-                    engineAudio.Stop();
-                }
+                engineAudio.loop = true;
+                engineAudio.Stop();
             }
         }
 
         void Update()
         {
-            if (useSounds)
+            if (!useSounds) return;
+
+            if (ezerealCarController == null || ezerealCarController.vehicleRB == null)
+                return;
+
+            HandleTireSound();
+            HandleEngineSound();
+        }
+
+        void HandleTireSound()
+        {
+            float speed = GetSpeed();
+
+            // 🎯 SOUND CONDITIONS (FIXED)
+            bool shouldPlay = !ezerealCarController.stationary && !ezerealCarController.InAir;
+
+            if (shouldPlay)
             {
-#if UNITY_6000_0_OR_NEWER
-                if (ezerealCarController != null && ezerealCarController.vehicleRB != null && tireAudio != null && engineAudio != null)
-                {
-                    if (!ezerealCarController.stationary && !alreadyPlaying && !ezerealCarController.InAir())
-                    {
-                        tireAudio.Play();
-                        alreadyPlaying = true;
-                    }
-                    else if (ezerealCarController.stationary || ezerealCarController.InAir())
-                    {
-                        tireAudio.Stop();
-                        alreadyPlaying = false;
-                    }
-
-                    // Get the car's current speed
-                    float speed = ezerealCarController.vehicleRB.linearVelocity.magnitude;
-
-                    // Calculate the volume based on speed
-                    float targetVolume = Mathf.Clamp01(speed / 15) * maxVolume;
-
-
-                    tireAudio.volume = targetVolume;
-
-                    //Tire Pitch
-
-                    float tireSoundPitch = 0.8f + (Mathf.Abs(ezerealCarController.vehicleRB.linearVelocity.magnitude) / 50f);
-                    tireAudio.pitch = tireSoundPitch;
-
-                    //Engine Pitch
-
-                    float engineSoundPitch = 0.8f + (Mathf.Abs(ezerealCarController.vehicleRB.linearVelocity.magnitude) / 25f);
-                    engineAudio.pitch = engineSoundPitch;
-#else
-            if (ezerealCarController != null && ezerealCarController.vehicleRB != null && tireAudio != null && engineAudio != null)
-            {
-                if (!ezerealCarController.stationary && !alreadyPlaying && !ezerealCarController.InAir())
+                if (!alreadyPlaying && tireAudio != null)
                 {
                     tireAudio.Play();
                     alreadyPlaying = true;
                 }
-                else if (ezerealCarController.stationary || ezerealCarController.InAir())
+            }
+            else
+            {
+                if (alreadyPlaying && tireAudio != null)
                 {
                     tireAudio.Stop();
                     alreadyPlaying = false;
                 }
-
-                // Get the car's current speed
-                float speed = ezerealCarController.vehicleRB.velocity.magnitude;
-
-                // Calculate the volume based on speed
-                float targetVolume = Mathf.Clamp01(speed / 15) * maxVolume;
-
-
-                tireAudio.volume = targetVolume;
-
-                //Tire Pitch
-
-                float tireSoundPitch = 0.8f + (Mathf.Abs(ezerealCarController.vehicleRB.velocity.magnitude) / 50f);
-                tireAudio.pitch = tireSoundPitch;
-
-                //Engine Pitch
-
-                float engineSoundPitch = 0.8f + (Mathf.Abs(ezerealCarController.vehicleRB.velocity.magnitude) / 25f);
-                engineAudio.pitch = engineSoundPitch;
-#endif
-                }
             }
+
+            // 🔊 VOLUME BASED ON SPEED
+            if (tireAudio != null)
+            {
+                float targetVolume = Mathf.Clamp01(speed / 15f) * maxVolume;
+                tireAudio.volume = Mathf.Lerp(tireAudio.volume, targetVolume, Time.deltaTime * 5f);
+
+                float pitch = 0.8f + (speed / 50f);
+                tireAudio.pitch = Mathf.Clamp(pitch, 0.8f, 2f);
+            }
+        }
+
+        void HandleEngineSound()
+        {
+            if (engineAudio == null) return;
+
+            float speed = GetSpeed();
+
+            // 🔑 STOP ENGINE IF IGNITION OFF
+            if (!ezerealCarController.isStarted)
+            {
+                if (engineAudio.isPlaying)
+                    engineAudio.Stop();
+                return;
+            }
+
+            if (!engineAudio.isPlaying)
+                engineAudio.Play();
+
+            // 🔊 ENGINE PITCH (SMOOTH + LOWER)
+            float targetPitch = 0.6f + (speed / 40f);
+            engineAudio.pitch = Mathf.Lerp(engineAudio.pitch, targetPitch, Time.deltaTime * 3f);
+
+            // 🔊 ENGINE VOLUME
+            float targetVolume = Mathf.Clamp01(speed / 30f);
+            engineAudio.volume = Mathf.Lerp(engineAudio.volume, targetVolume, Time.deltaTime * 3f);
+        }
+
+        float GetSpeed()
+        {
+            Rigidbody rb = ezerealCarController.vehicleRB;
+
+#if UNITY_6000_0_OR_NEWER
+            return rb.linearVelocity.magnitude;
+#else
+            return rb.velocity.magnitude;
+#endif
         }
     }
 }
