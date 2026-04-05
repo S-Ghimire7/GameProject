@@ -4,28 +4,18 @@ namespace Ezereal
 {
     public class EzerealSoundController : MonoBehaviour
     {
-        [Header("References")]
         [SerializeField] bool useSounds = true;
         [SerializeField] EzerealCarController ezerealCarController;
-        [SerializeField] AudioSource tireAudio;
         [SerializeField] AudioSource engineAudio;
+        [SerializeField] AudioSource ignitionAudio;
 
-        [Header("Settings")]
         public float maxVolume = 0.5f;
 
-        [Header("Debug")]
-        [SerializeField] bool alreadyPlaying;
+        bool engineStartedAfterIgnition;
 
         void Start()
         {
             if (!useSounds) return;
-
-            if (tireAudio != null)
-            {
-                tireAudio.volume = 0f;
-                tireAudio.loop = true;
-                tireAudio.Stop();
-            }
 
             if (engineAudio != null)
             {
@@ -41,43 +31,7 @@ namespace Ezereal
             if (ezerealCarController == null || ezerealCarController.vehicleRB == null)
                 return;
 
-            HandleTireSound();
             HandleEngineSound();
-        }
-
-        void HandleTireSound()
-        {
-            float speed = GetSpeed();
-
-            // 🎯 SOUND CONDITIONS (FIXED)
-            bool shouldPlay = !ezerealCarController.stationary && !ezerealCarController.InAir;
-
-            if (shouldPlay)
-            {
-                if (!alreadyPlaying && tireAudio != null)
-                {
-                    tireAudio.Play();
-                    alreadyPlaying = true;
-                }
-            }
-            else
-            {
-                if (alreadyPlaying && tireAudio != null)
-                {
-                    tireAudio.Stop();
-                    alreadyPlaying = false;
-                }
-            }
-
-            // 🔊 VOLUME BASED ON SPEED
-            if (tireAudio != null)
-            {
-                float targetVolume = Mathf.Clamp01(speed / 15f) * maxVolume;
-                tireAudio.volume = Mathf.Lerp(tireAudio.volume, targetVolume, Time.deltaTime * 5f);
-
-                float pitch = 0.8f + (speed / 50f);
-                tireAudio.pitch = Mathf.Clamp(pitch, 0.8f, 2f);
-            }
         }
 
         void HandleEngineSound()
@@ -86,24 +40,43 @@ namespace Ezereal
 
             float speed = GetSpeed();
 
-            // 🔑 STOP ENGINE IF IGNITION OFF
-            if (!ezerealCarController.isStarted)
+            if (ezerealCarController.isStarted)
             {
+                if (!engineStartedAfterIgnition)
+                {
+                    if (ignitionAudio != null && ignitionAudio.isPlaying)
+                    {
+                        Invoke(nameof(StartEngine), ignitionAudio.clip.length);
+                        engineStartedAfterIgnition = true;
+                    }
+                    else
+                    {
+                        StartEngine();
+                        engineStartedAfterIgnition = true;
+                    }
+                }
+            }
+            else
+            {
+                engineStartedAfterIgnition = false;
+
                 if (engineAudio.isPlaying)
                     engineAudio.Stop();
+
                 return;
             }
 
-            if (!engineAudio.isPlaying)
-                engineAudio.Play();
-
-            // 🔊 ENGINE PITCH (SMOOTH + LOWER)
             float targetPitch = 0.6f + (speed / 40f);
             engineAudio.pitch = Mathf.Lerp(engineAudio.pitch, targetPitch, Time.deltaTime * 3f);
 
-            // 🔊 ENGINE VOLUME
             float targetVolume = Mathf.Clamp01(speed / 30f);
             engineAudio.volume = Mathf.Lerp(engineAudio.volume, targetVolume, Time.deltaTime * 3f);
+        }
+
+        void StartEngine()
+        {
+            if (engineAudio != null && !engineAudio.isPlaying)
+                engineAudio.Play();
         }
 
         float GetSpeed()

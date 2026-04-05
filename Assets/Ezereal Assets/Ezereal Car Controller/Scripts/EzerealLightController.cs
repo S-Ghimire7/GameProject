@@ -4,13 +4,16 @@ using System.Collections;
 
 namespace Ezereal
 {
-    public class EzerealLightController : MonoBehaviour // This system uses Input System and has no references. Some methods here are called from other scripts.
+    public class EzerealLightController : MonoBehaviour
     {
         [Header("Beam Lights")]
         [Header("Sound")]
 
         [SerializeField] AudioSource indicatorAudioSource;
         [SerializeField] AudioClip indicatorSound;
+
+        [SerializeField] AudioSource hazardAudioSource;
+        [SerializeField] AudioClip hazardSound;
 
         [SerializeField] LightBeam currentBeam = LightBeam.off;
 
@@ -34,7 +37,6 @@ namespace Ezereal
         [SerializeField] GameObject[] rightTurnLights;
 
         [Header("Misc Lights")]
-        [Tooltip("Any additional lights. Interior lights.")]
         [SerializeField] GameObject[] miscLights;
 
         [Header("Settings")]
@@ -56,8 +58,6 @@ namespace Ezereal
             ReverseLightsOff();
             TurnLightsOff();
             BrakeLightsOff();
-            HandbrakeLightOff();
-            //MiscLightsOff();
         }
 
         void OnLowBeamLight()
@@ -68,8 +68,6 @@ namespace Ezereal
                     LowBeamOn();
                     break;
                 case LightBeam.low:
-                    AllBeamsOff();
-                    break;
                 case LightBeam.high:
                     AllBeamsOff();
                     break;
@@ -81,8 +79,6 @@ namespace Ezereal
             switch (currentBeam)
             {
                 case LightBeam.off:
-                    HighBeamOn();
-                    break;
                 case LightBeam.low:
                     HighBeamOn();
                     break;
@@ -91,6 +87,7 @@ namespace Ezereal
                     break;
             }
         }
+
         void OnLeftTurnSignal()
         {
             if (!hazardLightsActive)
@@ -101,9 +98,7 @@ namespace Ezereal
                 leftTurnActive = !leftTurnActive;
 
                 if (leftTurnActive)
-                {
                     StartCoroutine(TurnSignalController(leftTurnLights, leftTurnActive));
-                }
             }
         }
 
@@ -117,9 +112,7 @@ namespace Ezereal
                 rightTurnActive = !rightTurnActive;
 
                 if (rightTurnActive)
-                {
                     StartCoroutine(TurnSignalController(rightTurnLights, rightTurnActive));
-                }
             }
         }
 
@@ -132,66 +125,53 @@ namespace Ezereal
             hazardLightsActive = !hazardLightsActive;
 
             if (hazardLightsActive)
-            {
                 StartCoroutine(HazardLightsController());
-            }
         }
 
         IEnumerator TurnSignalController(GameObject[] turnLights, bool isActive)
+        {
+            while (isActive)
             {
-                while (isActive)
-                {
-                    SetLight(turnLights, true);
+                SetLight(turnLights, true);
 
-                    if (indicatorAudioSource && indicatorSound)
-                    {
-                        indicatorAudioSource.PlayOneShot(indicatorSound);
-                    }
+                if (indicatorAudioSource && indicatorSound)
+                    indicatorAudioSource.PlayOneShot(indicatorSound);
 
-                    yield return new WaitForSeconds(lightBlinkDelay);
+                yield return new WaitForSeconds(lightBlinkDelay);
 
-                    SetLight(turnLights, false);
-                    yield return new WaitForSeconds(lightBlinkDelay);
-                }
+                SetLight(turnLights, false);
+                yield return new WaitForSeconds(lightBlinkDelay);
             }
+        }
 
         IEnumerator HazardLightsController()
         {
             while (hazardLightsActive)
             {
                 TurnLightsOn();
+
+                if (hazardAudioSource && hazardSound && !hazardAudioSource.isPlaying)
+                    hazardAudioSource.PlayOneShot(hazardSound);
+
                 yield return new WaitForSeconds(lightBlinkDelay);
+
                 TurnLightsOff();
                 yield return new WaitForSeconds(lightBlinkDelay);
             }
+
+            if (hazardAudioSource && hazardAudioSource.isPlaying)
+                hazardAudioSource.Stop();
         }
+
         void SetLight(GameObject[] lights, bool isActive)
         {
-            if (isActive)
-            {
-                foreach (var light in lights)
-                {
-                    light.SetActive(true);
-                }
-            }
-            else
-            {
-                foreach (var light in lights)
-                {
-                    light.SetActive(false);
-                }
-            }
+            foreach (var light in lights)
+                light.SetActive(isActive);
         }
 
         void AllBeamsOff()
         {
-            SetLight(lowBeamHeadlights, false);
-            SetLight(lowBeamSpotlights, false);
             SetLight(rearLights, false);
-
-            SetLight(highBeamHeadlights, false);
-            SetLight(highBeamSpotlights, false);
-
             currentBeam = LightBeam.off;
         }
 
@@ -200,10 +180,8 @@ namespace Ezereal
             SetLight(lowBeamHeadlights, true);
             SetLight(lowBeamSpotlights, true);
             SetLight(rearLights, true);
-
             SetLight(highBeamHeadlights, false);
             SetLight(highBeamSpotlights, false);
-
             currentBeam = LightBeam.low;
         }
 
@@ -212,10 +190,8 @@ namespace Ezereal
             SetLight(lowBeamHeadlights, true);
             SetLight(lowBeamSpotlights, false);
             SetLight(rearLights, true);
-
             SetLight(highBeamHeadlights, true);
             SetLight(highBeamSpotlights, true);
-
             currentBeam = LightBeam.high;
         }
 
@@ -231,12 +207,6 @@ namespace Ezereal
             SetLight(rightTurnLights, true);
         }
 
-        void SetHazardLightsOn()
-        {
-            SetLight(leftTurnLights, true);
-            SetLight(rightTurnLights, true);
-        }
-
         public void BrakeLightsOff()
         {
             SetLight(brakeLights, false);
@@ -245,16 +215,6 @@ namespace Ezereal
         public void BrakeLightsOn()
         {
             SetLight(brakeLights, true);
-        }
-
-        public void HandbrakeLightOff()
-        {
-            SetLight(handbrakeLight, false);
-        }
-
-        public void HandbrakeLightOn()
-        {
-            SetLight(handbrakeLight, true);
         }
 
         public void ReverseLightsOff()
@@ -267,12 +227,12 @@ namespace Ezereal
             SetLight(reverseLights, true);
         }
 
-        public void MiscLightsOff() // Interior Lights
+        public void MiscLightsOff()
         {
             SetLight(miscLights, false);
         }
 
-        public void MiscLightsOn() // Interior Lights
+        public void MiscLightsOn()
         {
             SetLight(miscLights, true);
         }

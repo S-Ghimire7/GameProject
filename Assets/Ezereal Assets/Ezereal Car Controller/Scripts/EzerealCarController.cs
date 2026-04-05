@@ -1,6 +1,7 @@
 using UnityEngine;
 using TMPro;
 using UnityEngine.InputSystem;
+using System.Collections;
 
 namespace Ezereal
 {
@@ -19,86 +20,64 @@ namespace Ezereal
     {
         public Rigidbody vehicleRB;
 
-        [Header("Wheels")]
         public WheelCollider frontLeftWheelCollider;
         public WheelCollider frontRightWheelCollider;
         public WheelCollider rearLeftWheelCollider;
         public WheelCollider rearRightWheelCollider;
 
-        [Header("UI")]
         public TMP_Text currentGearTMP_UI;
         public TMP_Text currentSpeedTMP_UI;
 
-        [Header("Ignition")]
         public AudioSource ignitionAudio;
         public AudioSource engineAudio;
+        public AudioSource shutdownAudio;
 
-        [Header("Controls")]
         public KeyCode ignitionKey = KeyCode.I;
         public KeyCode gearUpKey = KeyCode.LeftShift;
         public KeyCode gearDownKey = KeyCode.LeftControl;
         public KeyCode handbrakeKey = KeyCode.Space;
+        public KeyCode clutchKey = KeyCode.LeftAlt;
 
-        [Header("Car Settings")]
         public float horsePower = 400f;
         public float brakePower = 4000f;
         public float maxSteeringAngle = 28f;
+        public float maxCarSpeed = 130f;
 
-        [Header("Top Speed")]
-        public float maxCarSpeed = 100f;
-
-        [Header("Gear Ratios")]
         public float[] gearRatios = { -3.0f, 0f, 3.5f, 2.5f, 1.8f, 1.2f, 1.0f };
-
-        [Header("Gear Speed Limits (KM/H)")]
-        public float[] gearSpeedLimits =
-        {
-            40f,  // Reverse
-            0f,   // Neutral
-            20f,  // Gear 1  🔥 FIXED
-            40f,  // Gear 2
-            60f,  // Gear 3
-            80f,  // Gear 4
-            100f  // Gear 5
-        };
+        public float[] gearSpeedLimits = { 40f, 0f, 15f, 35f, 65f, 90f, 110f };
 
         public float finalDrive = 2.8f;
-
-        [Header("Engine")]
-        public float maxRPM = 5500f;
-
-        [Header("Grip")]
         public float traction = 1.5f;
 
-        [Header("State")]
         public ManualGears currentGear = ManualGears.Neutral;
-        public bool isStarted = false;
 
-        public bool stationary;
-        public bool InAir;
+        public bool isStarted = false;
 
         float throttleInput;
         float brakeInput;
         float steerInput;
 
-        float smoothThrottle;
-        float rpm;
-
+        bool clutchPressed;
         bool handbrakeActive;
+
+        public Renderer handbrakeRenderer;
+        public Renderer clutchRenderer;
 
         void Awake()
         {
             if (vehicleRB == null)
                 vehicleRB = GetComponent<Rigidbody>();
+
+            FindHandbrakeObject();
+            FindClutchObject();
         }
 
         void Update()
         {
             HandleIgnition();
+            HandleClutch();
             HandleGears();
             HandleHandbrake();
-
-            UpdateState();
             UpdateUI();
             UpdateEngineSound();
         }
@@ -107,7 +86,7 @@ namespace Ezereal
         {
             if (!isStarted)
             {
-                StopCar();
+                StopTorque();
                 return;
             }
 
@@ -116,84 +95,156 @@ namespace Ezereal
             ApplyBraking();
         }
 
+        void FindHandbrakeObject()
+        {
+            GameObject obj = GameObject.Find("Interior Light Handbrake");
+
+            if (obj != null)
+            {
+                handbrakeRenderer = obj.GetComponent<Renderer>();
+                if (handbrakeRenderer != null)
+                    handbrakeRenderer.enabled = false;
+            }
+        }
+
+        void FindClutchObject()
+        {
+            GameObject obj = GameObject.Find("Interior Light Clutch");
+
+            if (obj != null)
+            {
+                clutchRenderer = obj.GetComponent<Renderer>();
+                if (clutchRenderer != null)
+                    clutchRenderer.enabled = false;
+            }
+        }
+
         void HandleIgnition()
         {
             if (Input.GetKeyDown(ignitionKey))
             {
                 isStarted = !isStarted;
 
-                if (ignitionAudio != null)
+                if (isStarted && ignitionAudio != null)
                     ignitionAudio.Play();
-
-                if (!isStarted && engineAudio != null)
-                    engineAudio.Stop();
+                else
+                {
+                    if (engineAudio != null) engineAudio.Stop();
+                    if (shutdownAudio != null) shutdownAudio.Play();
+                    StopCar();
+                }
             }
+        }
+
+        void HandleClutch()
+        {
+            clutchPressed = Input.GetKey(clutchKey);
+
+            if (clutchRenderer != null)
+                clutchRenderer.enabled = clutchPressed;
         }
 
         void HandleGears()
         {
+            if (!clutchPressed) return;
+
+            int previous = (int)currentGear;
+
             if (Input.GetKeyDown(gearUpKey) && (int)currentGear < 6)
                 currentGear++;
 
             if (Input.GetKeyDown(gearDownKey) && (int)currentGear > 0)
                 currentGear--;
+
+            if ((int)currentGear != previous)
+            {
+                StartCoroutine(GearLockBrake());
+            }
+        }
+
+        IEnumerator GearLockBrake()
+        {
+            float target = gearSpeedLimits[(int)currentGear];
+
+            while (target > 0f && vehicleRB.linearVelocity.magnitude * 3.6f > target)
+            {
+                vehicleRB.linearVelocity *= 0.9f;
+                yield return new WaitForFixedUpdate();
+            }
         }
 
         void HandleHandbrake()
         {
             handbrakeActive = Input.GetKey(handbrakeKey);
+
+            if (handbrakeRenderer != null)
+                handbrakeRenderer.enabled = handbrakeActive;
         }
 
         void ApplyAcceleration()
         {
-            if (!isStarted || handbrakeActive)
-            {
-                rearLeftWheelCollider.motorTorque = 0;
-                rearRightWheelCollider.motorTorque = 0;
-                return;
-            }
-
             float speedKmh = vehicleRB.linearVelocity.magnitude * 3.6f;
 
-            float gearRatio = gearRatios[(int)currentGear];
+            float ratio = gearRatios[(int)currentGear];
+            float limit = gearSpeedLimits[(int)currentGear];
 
-            // ❌ Neutral
-            if (gearRatio == 0f)
-                return;
-
-            float maxSpeed = gearSpeedLimits[(int)currentGear];
-
-            // 🔥 HARD GEAR LIMIT (FIXES GEAR 1 ISSUE)
-            if (maxSpeed > 0f && speedKmh >= maxSpeed)
+            if (handbrakeActive || currentGear == ManualGears.Neutral)
             {
-                rearLeftWheelCollider.motorTorque = 0;
-                rearRightWheelCollider.motorTorque = 0;
-
-                vehicleRB.linearVelocity *= 0.98f; // slight drag
-
+                ApplyBrakeForce(1f);
+                StopTorque();
                 return;
             }
 
-            // 🔥 GLOBAL SPEED LIMIT
-            if (speedKmh >= maxCarSpeed)
+            if (limit > 0f && speedKmh >= limit)
             {
-                rearLeftWheelCollider.motorTorque = 0;
-                rearRightWheelCollider.motorTorque = 0;
+                ApplyBrakeForce(1.5f);
+                StopTorque();
                 return;
             }
 
-            // RPM calculation
-            rpm = Mathf.Clamp(speedKmh * Mathf.Abs(gearRatio) * 80f, 0f, maxRPM);
+            if (Mathf.Abs(throttleInput) < 0.01f)
+            {
+                ApplyBrakeForce(2f);
+                HandleCreep(speedKmh);
+                return;
+            }
 
-            float throttle = Mathf.Clamp01(throttleInput);
-            smoothThrottle = Mathf.Lerp(smoothThrottle, throttle, Time.deltaTime * 2f);
-
-            float torque = horsePower * smoothThrottle * gearRatio * finalDrive;
-
-            torque *= traction;
+            float torque = horsePower * throttleInput * ratio * finalDrive * traction;
 
             rearLeftWheelCollider.motorTorque = torque;
             rearRightWheelCollider.motorTorque = torque;
+
+            ApplyBrakeForce(0.5f);
+        }
+
+        void HandleCreep(float speedKmh)
+        {
+            if (clutchPressed) return;
+
+            if (currentGear == ManualGears.Gear1 && throttleInput < 0.01f && speedKmh < 5f)
+            {
+                float creep = horsePower * 0.05f;
+                rearLeftWheelCollider.motorTorque = creep;
+                rearRightWheelCollider.motorTorque = creep;
+            }
+
+            if (currentGear == ManualGears.Reverse && throttleInput < 0.01f && speedKmh < 5f)
+            {
+                float creep = horsePower * 0.05f;
+                rearLeftWheelCollider.motorTorque = -creep;
+                rearRightWheelCollider.motorTorque = -creep;
+            }
+        }
+
+        void ApplyBrakeForce(float multiplier)
+        {
+            float speed = vehicleRB.linearVelocity.magnitude;
+
+            float brake = Mathf.Clamp(speed * 1200f, 2000f, 30000f);
+            brake *= multiplier;
+
+            rearLeftWheelCollider.brakeTorque = brake;
+            rearRightWheelCollider.brakeTorque = brake;
         }
 
         void ApplyBraking()
@@ -202,14 +253,13 @@ namespace Ezereal
 
             frontLeftWheelCollider.brakeTorque = brake;
             frontRightWheelCollider.brakeTorque = brake;
-
             rearLeftWheelCollider.brakeTorque = brake;
             rearRightWheelCollider.brakeTorque = brake;
 
             if (handbrakeActive)
             {
-                rearLeftWheelCollider.brakeTorque = brakePower * 2f;
-                rearRightWheelCollider.brakeTorque = brakePower * 2f;
+                rearLeftWheelCollider.brakeTorque = brakePower * 3f;
+                rearRightWheelCollider.brakeTorque = brakePower * 3f;
             }
         }
 
@@ -221,22 +271,28 @@ namespace Ezereal
             frontRightWheelCollider.steerAngle = steer;
         }
 
-        void StopCar()
+        void StopTorque()
         {
             rearLeftWheelCollider.motorTorque = 0;
             rearRightWheelCollider.motorTorque = 0;
+        }
+
+        void StopCar()
+        {
+            StopTorque();
+            vehicleRB.linearVelocity = Vector3.zero;
+            vehicleRB.angularVelocity = Vector3.zero;
         }
 
         void UpdateEngineSound()
         {
             if (!isStarted || engineAudio == null) return;
 
-            engineAudio.volume = 1f;
+            if (!engineAudio.isPlaying)
+                engineAudio.Play();
 
             float speed = vehicleRB.linearVelocity.magnitude * 3.6f;
-            float pitch = Mathf.Lerp(0.8f, 1.3f, speed / maxCarSpeed);
-
-            engineAudio.pitch = Mathf.Lerp(engineAudio.pitch, pitch, Time.deltaTime * 2f);
+            engineAudio.pitch = Mathf.Lerp(0.8f, 1.3f, speed / maxCarSpeed);
         }
 
         void UpdateUI()
@@ -248,26 +304,6 @@ namespace Ezereal
 
             if (currentGearTMP_UI != null)
                 currentGearTMP_UI.text = currentGear.ToString();
-        }
-
-        // ✅ FIXED STATE SYSTEM
-        void UpdateState()
-        {
-            float speed = vehicleRB.linearVelocity.magnitude;
-
-            stationary = speed < 0.2f &&
-                         Mathf.Abs(throttleInput) < 0.05f &&
-                         Mathf.Abs(brakeInput) < 0.05f;
-
-            bool wheelsGrounded =
-                frontLeftWheelCollider.isGrounded ||
-                frontRightWheelCollider.isGrounded ||
-                rearLeftWheelCollider.isGrounded ||
-                rearRightWheelCollider.isGrounded;
-
-            bool groundCheck = Physics.Raycast(transform.position, Vector3.down, 1.5f);
-
-            InAir = !wheelsGrounded && !groundCheck;
         }
 
         void OnAccelerate(InputValue value) => throttleInput = value.Get<float>();
