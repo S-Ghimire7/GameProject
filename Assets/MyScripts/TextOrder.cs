@@ -34,16 +34,16 @@ public class TextOrder : MonoBehaviour
 
     IEnumerator PlaySequence()
     {
-        yield return StartCoroutine(TypeText("Welcome to the tutorial section of the Game."));
+        yield return StartCoroutine(TypeText(" Welcome to the tutorial section of the Game! "));
         yield return new WaitForSeconds(1f);
 
-        yield return StartCoroutine(TypeText("This is where you will learn how to drive the car."));
+        yield return StartCoroutine(TypeText(" This is where you will learn how to drive the car."));
         yield return new WaitForSeconds(1f);
 
-        yield return StartCoroutine(TypeText("Firstly, I want you to start the car."));
+        yield return StartCoroutine(TypeText(" Firstly, I want you to start the car."));
         yield return new WaitForSeconds(1f);
 
-        yield return StartCoroutine(TypeText("For that, you will need to press 'CapsLock' on your keyboard."));
+        yield return StartCoroutine(TypeText(" For that, you will need to press 'CapsLock' on your keyboard."));
 
         introFinished = true;
     }

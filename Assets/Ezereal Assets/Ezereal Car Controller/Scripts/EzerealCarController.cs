@@ -53,6 +53,9 @@ namespace Ezereal
 
         public bool isStarted = false;
 
+        // 🔥 MENU CONTROL FIX (IMPORTANT)
+        public bool canControl = true;
+
         float throttleInput;
         float brakeInput;
         float steerInput;
@@ -63,17 +66,12 @@ namespace Ezereal
         public Renderer handbrakeRenderer;
         public Renderer clutchRenderer;
 
-        void Awake()
-        {
-            if (vehicleRB == null)
-                vehicleRB = GetComponent<Rigidbody>();
-
-            FindHandbrakeObject();
-            FindClutchObject();
-        }
+        float handbrakeForce = 8000f;
 
         void Update()
         {
+            if (!canControl) return;
+
             HandleIgnition();
             HandleClutch();
             HandleGears();
@@ -84,6 +82,8 @@ namespace Ezereal
 
         void FixedUpdate()
         {
+            if (!canControl) return;
+
             if (!isStarted)
             {
                 StopTorque();
@@ -91,32 +91,15 @@ namespace Ezereal
             }
 
             ApplySteering();
+
+            if (handbrakeActive)
+            {
+                ApplyHandbrakeOnly();
+                return;
+            }
+
             ApplyAcceleration();
             ApplyBraking();
-        }
-
-        void FindHandbrakeObject()
-        {
-            GameObject obj = GameObject.Find("Interior Light Handbrake");
-
-            if (obj != null)
-            {
-                handbrakeRenderer = obj.GetComponent<Renderer>();
-                if (handbrakeRenderer != null)
-                    handbrakeRenderer.enabled = false;
-            }
-        }
-
-        void FindClutchObject()
-        {
-            GameObject obj = GameObject.Find("Interior Light Clutch");
-
-            if (obj != null)
-            {
-                clutchRenderer = obj.GetComponent<Renderer>();
-                if (clutchRenderer != null)
-                    clutchRenderer.enabled = false;
-            }
         }
 
         void HandleIgnition()
@@ -157,9 +140,7 @@ namespace Ezereal
                 currentGear--;
 
             if ((int)currentGear != previous)
-            {
                 StartCoroutine(GearLockBrake());
-            }
         }
 
         IEnumerator GearLockBrake()
@@ -181,6 +162,20 @@ namespace Ezereal
                 handbrakeRenderer.enabled = handbrakeActive;
         }
 
+        void ApplyHandbrakeOnly()
+        {
+            rearLeftWheelCollider.motorTorque = 0;
+            rearRightWheelCollider.motorTorque = 0;
+            frontLeftWheelCollider.motorTorque = 0;
+            frontRightWheelCollider.motorTorque = 0;
+
+            rearLeftWheelCollider.brakeTorque = handbrakeForce;
+            rearRightWheelCollider.brakeTorque = handbrakeForce;
+
+            frontLeftWheelCollider.brakeTorque = handbrakeForce * 0.3f;
+            frontRightWheelCollider.brakeTorque = handbrakeForce * 0.3f;
+        }
+
         void ApplyAcceleration()
         {
             float speedKmh = vehicleRB.linearVelocity.magnitude * 3.6f;
@@ -188,24 +183,15 @@ namespace Ezereal
             float ratio = gearRatios[(int)currentGear];
             float limit = gearSpeedLimits[(int)currentGear];
 
-            if (handbrakeActive || currentGear == ManualGears.Neutral)
+            if (currentGear == ManualGears.Neutral)
             {
-                ApplyBrakeForce(1f);
                 StopTorque();
                 return;
             }
 
             if (limit > 0f && speedKmh >= limit)
             {
-                ApplyBrakeForce(1.5f);
                 StopTorque();
-                return;
-            }
-
-            if (Mathf.Abs(throttleInput) < 0.01f)
-            {
-                ApplyBrakeForce(2f);
-                HandleCreep(speedKmh);
                 return;
             }
 
@@ -213,38 +199,6 @@ namespace Ezereal
 
             rearLeftWheelCollider.motorTorque = torque;
             rearRightWheelCollider.motorTorque = torque;
-
-            ApplyBrakeForce(0.5f);
-        }
-
-        void HandleCreep(float speedKmh)
-        {
-            if (clutchPressed) return;
-
-            if (currentGear == ManualGears.Gear1 && throttleInput < 0.01f && speedKmh < 5f)
-            {
-                float creep = horsePower * 0.05f;
-                rearLeftWheelCollider.motorTorque = creep;
-                rearRightWheelCollider.motorTorque = creep;
-            }
-
-            if (currentGear == ManualGears.Reverse && throttleInput < 0.01f && speedKmh < 5f)
-            {
-                float creep = horsePower * 0.05f;
-                rearLeftWheelCollider.motorTorque = -creep;
-                rearRightWheelCollider.motorTorque = -creep;
-            }
-        }
-
-        void ApplyBrakeForce(float multiplier)
-        {
-            float speed = vehicleRB.linearVelocity.magnitude;
-
-            float brake = Mathf.Clamp(speed * 1200f, 2000f, 30000f);
-            brake *= multiplier;
-
-            rearLeftWheelCollider.brakeTorque = brake;
-            rearRightWheelCollider.brakeTorque = brake;
         }
 
         void ApplyBraking()
@@ -255,12 +209,6 @@ namespace Ezereal
             frontRightWheelCollider.brakeTorque = brake;
             rearLeftWheelCollider.brakeTorque = brake;
             rearRightWheelCollider.brakeTorque = brake;
-
-            if (handbrakeActive)
-            {
-                rearLeftWheelCollider.brakeTorque = brakePower * 3f;
-                rearRightWheelCollider.brakeTorque = brakePower * 3f;
-            }
         }
 
         void ApplySteering()

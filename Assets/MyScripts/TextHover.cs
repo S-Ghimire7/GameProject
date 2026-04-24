@@ -13,17 +13,20 @@ public class TextHover : MonoBehaviour, IPointerEnterHandler, IPointerExitHandle
 
     void Awake()
     {
-        if (!text)
+        if (text == null)
+            text = GetComponent<TMP_Text>();
+
+        if (text == null)
             text = GetComponentInChildren<TMP_Text>();
 
-        originalScale = text.transform.localScale;
+        originalScale = transform.localScale;
         targetScale = originalScale;
     }
 
     void Update()
     {
-        text.transform.localScale = Vector3.Lerp(
-            text.transform.localScale,
+        transform.localScale = Vector3.Lerp(
+            transform.localScale,
             targetScale,
             Time.deltaTime * smoothSpeed
         );
@@ -32,12 +35,16 @@ public class TextHover : MonoBehaviour, IPointerEnterHandler, IPointerExitHandle
     public void OnPointerEnter(PointerEventData eventData)
     {
         targetScale = originalScale * hoverScale;
-        text.fontStyle |= FontStyles.Underline;
+
+        if (text != null)
+            text.fontStyle |= FontStyles.Underline;
     }
 
     public void OnPointerExit(PointerEventData eventData)
     {
         targetScale = originalScale;
-        text.fontStyle &= ~FontStyles.Underline;
+
+        if (text != null)
+            text.fontStyle &= ~FontStyles.Underline;
     }
 }

@@ -7,32 +7,21 @@ public class AfterRamp : MonoBehaviour
     public TextMeshProUGUI textUI;
     public float typingSpeed = 0.05f;
 
-    private bool hasTriggered = false;
     private Coroutine currentRoutine;
+    private bool triggered;
 
-    private void OnTriggerEnter(Collider other)
+    void OnTriggerEnter(Collider other)
     {
-        Debug.Log("Trigger entered by: " + other.name);
-
-        if (hasTriggered)
-        {
-            Debug.Log("Trigger ignored: already triggered once.");
-            return;
-        }
+        if (triggered) return;
 
         if (other.CompareTag("vehicle"))
         {
-            Debug.Log("Vehicle detected - trigger sequence started.");
-            hasTriggered = true;
+            triggered = true;
 
             if (currentRoutine != null)
                 StopCoroutine(currentRoutine);
 
             currentRoutine = StartCoroutine(TriggerSequence());
-        }
-        else
-        {
-            Debug.Log("Object entered trigger but is NOT Vehicle: " + other.tag);
         }
     }
 
@@ -42,7 +31,6 @@ public class AfterRamp : MonoBehaviour
         yield return new WaitForSeconds(2f);
 
         textUI.text = "";
-
     }
 
     IEnumerator TypeText(string message)
