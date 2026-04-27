@@ -23,15 +23,14 @@ public class TextHover : MonoBehaviour, IPointerEnterHandler, IPointerExitHandle
         targetScale = originalScale;
     }
 
-    void Update()
+   void Update()
     {
         transform.localScale = Vector3.Lerp(
             transform.localScale,
             targetScale,
-            Time.deltaTime * smoothSpeed
+            Time.unscaledDeltaTime * smoothSpeed
         );
     }
-
     public void OnPointerEnter(PointerEventData eventData)
     {
         targetScale = originalScale * hoverScale;
