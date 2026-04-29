@@ -4,36 +4,41 @@ using UnityEngine.EventSystems;
 
 public class EscapeDrivingSchool : MonoBehaviour
 {
+    public static EscapeDrivingSchool Instance { get; private set; }
+
     public GameObject pausePanel;
     public GameObject hudCanvas;
 
     private bool isGamePaused;
-    private bool isHandlingClick;
 
-    public static bool isUIOpen = false;
+    public static bool IsUIOpen => Instance != null && Instance.isGamePaused;
+
+    public static void SetUIOpen(bool value)
+    {
+        if (Instance != null)
+            Instance.isGamePaused = value;
+    }
+
+    void Awake()
+    {
+        Instance = this;
+        Time.timeScale = 1f;
+        isGamePaused = false;
+    }
 
     void Start()
     {
-        Time.timeScale = 1f;
-        isGamePaused = false;
-        isHandlingClick = false;
-
         pausePanel.SetActive(false);
-
         Cursor.lockState = CursorLockMode.None;
         Cursor.visible = true;
-
-        isUIOpen = false;
     }
 
     void Update()
     {
         if (Input.GetKeyDown(KeyCode.Escape))
-        {
             TogglePause(!isGamePaused);
-        }
 
-        if (!isGamePaused && !isUIOpen && Input.GetMouseButtonDown(0))
+        if (!isGamePaused && !IsUIOpen && Input.GetMouseButtonDown(0))
         {
             if (EventSystem.current != null && EventSystem.current.IsPointerOverGameObject())
                 return;
@@ -47,14 +52,11 @@ public class EscapeDrivingSchool : MonoBehaviour
             Cursor.lockState = CursorLockMode.None;
             Cursor.visible = true;
         }
-
-        isHandlingClick = false;
     }
 
     void TogglePause(bool paused)
     {
         isGamePaused = paused;
-        isUIOpen = paused;
 
         pausePanel.SetActive(paused);
 
@@ -72,30 +74,18 @@ public class EscapeDrivingSchool : MonoBehaviour
 
     public void OnResumeClicked()
     {
-        if (isHandlingClick) return;
-        isHandlingClick = true;
         TogglePause(false);
     }
 
     public void OnRestartClicked()
     {
-        if (isHandlingClick) return;
-        isHandlingClick = true;
-
-        isUIOpen = false;
         Time.timeScale = 1f;
-
         SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
     }
 
     public void OnMainMenuClicked()
     {
-        if (isHandlingClick) return;
-        isHandlingClick = true;
-
-        isUIOpen = false;
         Time.timeScale = 1f;
-
         SceneManager.LoadScene("MainMenu");
     }
 }

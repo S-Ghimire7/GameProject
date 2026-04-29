@@ -31,7 +31,7 @@ public class TUTEndScreen : MonoBehaviour
         Cursor.lockState = CursorLockMode.None;
         Cursor.visible = true;
 
-        EscapeDrivingSchool.isUIOpen = true;
+        EscapeDrivingSchool.SetUIOpen(true);
 
         if (EventSystem.current != null)
             EventSystem.current.SetSelectedGameObject(null);
@@ -45,7 +45,7 @@ public class TUTEndScreen : MonoBehaviour
     {
         if (!canClick) return;
 
-        EscapeDrivingSchool.isUIOpen = false;
+        EscapeDrivingSchool.SetUIOpen(false);
         Time.timeScale = 1f;
 
         SceneManager.LoadScene("City");
@@ -55,7 +55,7 @@ public class TUTEndScreen : MonoBehaviour
     {
         if (!canClick) return;
 
-        EscapeDrivingSchool.isUIOpen = false;
+        EscapeDrivingSchool.SetUIOpen(false);
         Time.timeScale = 1f;
 
         Cursor.lockState = CursorLockMode.None;
